@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/home/cooper/Code/Graph/GAIN/code/train.py", line 9, in <module>
+    from config import *
+  File "/home/cooper/Code/Graph/GAIN/code/config.py", line 12, in <module>
+    rel2id = json.load(open(os.path.join(data_dir, 'rel2id.json'), "r"))
+FileNotFoundError: [Errno 2] No such file or directory: '../data/rel2id.json'
