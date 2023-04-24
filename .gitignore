@@ -1,0 +1,16 @@
+# ignore PLM
+PLM/bert-base-uncased/config.json
+PLM/bert-base-uncased/vocab.txt
+PLM/bert-base-uncased/pytorch_model.bin
+
+# ignore data
+data/dev.json
+data/ner2id.json
+data/rel2id.json
+data/test.json
+data/train_annotated.json
+data/vec.npy
+data/word2id.json
+
+.DS_Store
+*/.DS_Store
