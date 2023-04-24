@@ -1,11 +1,11 @@
 import dgl # Deep Graph Library 用于处理图形数据的库
-import dgl.nn.pytorch as dglnn
-import numpy as np
-import torch
-import torch.nn as nn
-from transformers import *
+import dgl.nn.pytorch as dglnn # DGL的 PyTorch 模块，用于构建和训练图神经网络模型
+import numpy as np # numpy 科学计算库
+import torch # PyTorch深度学习框架
+import torch.nn as nn # PyTorch中的神经网络模块，提供预定义的神经网络层和模型
+from transformers import * # Transformers提供预训练的语言模型和各种工具和函数
 
-from utils import get_cuda
+from utils import get_cuda # 导入了自定义模块utils中的函数get_cuda(), 用于进行GPU加速的辅助函数
 
 
 class GAIN_GloVe(nn.Module):
