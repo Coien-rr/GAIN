@@ -9,44 +9,88 @@ from utils import get_cuda # 导入了自定义模块utils中的函数get_cuda()
 
 
 class GAIN_GloVe(nn.Module):
+    # 定义GAIN_Glove的PyTorch基类，该类继承nn.Module
+    # nn.Module是PyTorch中所有神经网络模型的基类，定义了一些常用的方法和属性，例如forward()和parameters()方法。
+
     def __init__(self, config):
+        # 定义GAIN_Glove的初始化函数
+
         super(GAIN_GloVe, self).__init__()
         self.config = config
 
-        word_emb_size = config.word_emb_size
+        # 配置词向量维度、词汇表大小和编码器输入大小
+        word_emb_size = config.word_emb_size # 词向量：用来表示词语语义的向量，通常是固定维度，即词向量维度
         vocabulary_size = config.vocabulary_size
         encoder_input_size = word_emb_size
+
+        # 根据config的激活函数选择相应的激活函数
+        ## nn.Tanh(): 双曲正切函数
+        ## nn.ReLU(): 修正线性单元
         self.activation = nn.Tanh() if config.activation == 'tanh' else nn.ReLU()
 
+
+        # 定义词嵌入层
         self.word_emb = nn.Embedding(vocabulary_size, word_emb_size, padding_idx=config.word_pad)
+        # 定义了一个名为self.word_emb的成员变量，类型为nn.Embedding，用于将输入的单词序列转化为对应的词向量序列。
+        # word_emb在模型的前向传播过程中会被调用，将输入的单词序列转化为对应的词向量序列，并输入到后续的网络结构中进行处理和预测。
+
+        # 如果使用预训练词向量，则用预训练的词向量来初始化词嵌入层的权重
+        ## 预训练词向量：预训练词向量是指在大规模的语料库上进行训练得到的词向量。
+        ## 它通常使用词嵌入技术（如Word2Vec、GloVe等）来学习词汇在高维空间的分布式表示，使得语义上相似的词在向量空间中的距离也比较近。
+        ## 预训练词向量通常能够提高模型的性能，特别是在训练数据有限的情况下。
         if config.pre_train_word:
             self.word_emb = nn.Embedding(config.data_word_vec.shape[0], word_emb_size, padding_idx=config.word_pad)
             self.word_emb.weight.data.copy_(torch.from_numpy(config.data_word_vec[:, :word_emb_size]))
 
+        # 根据config确定是否微调词嵌入层self.word_emb的权重
         self.word_emb.weight.requires_grad = config.finetune_word
+
+        # 如果使用实体类型信息，则将实体类型嵌入到编码器输入中
         if config.use_entity_type:
-            encoder_input_size += config.entity_type_size
+            # 将词嵌入层输出维度 word_emb_size 与实体类型嵌入层输出维度 config.entity_type_size 相加
+            # 作为双向LSTM的输入维度encoder_input_size
+            # encoder_input_size = config.word_emb_size + config.entity_type_size
+            encoder_input_size += config.entity_type_size # Line24 encoder_input_size = word_emb_size
+            # 增加实体类型嵌入层，
             self.entity_type_emb = nn.Embedding(config.entity_type_num, config.entity_type_size,
                                                 padding_idx=config.entity_type_pad)
 
+        # 如果使用实体ID信息，则将实体ID嵌入到编码器输入中
         if config.use_entity_id:
+            # 如上
             encoder_input_size += config.entity_id_size
+            #增加实体ID嵌入层
             self.entity_id_emb = nn.Embedding(config.max_entity_num + 1, config.entity_id_size,
                                               padding_idx=config.entity_id_pad)
 
+        # 定义双向LSTM编码器
         self.encoder = BiLSTM(encoder_input_size, config)
+        ## BiLSTM是一个双向的长短时记忆网络
+        ## 由前向LSTM和后向LSTM组成，可以有效地捕捉序列中的时序信息，并生成一个固定维度的向量表示，用于后续的图卷积和关系预测。
 
-        self.gcn_dim = config.gcn_dim
+        # 定义RelGraphConvLayer实例，构成多层的GCN层
+        self.gcn_dim = config.gcn_dim # gcn_dim是GCN层的输入和输出维度
         assert self.gcn_dim == 2 * config.lstm_hidden_size, 'gcn dim should be the lstm hidden dim * 2'
-        rel_name_lists = ['intra', 'inter', 'global']
+        # lstm_hidden_size 是BiLSTM模型中的隐藏层维度。
+        # 因为在图卷积网络层中，节点的特征是由它本身的特征以及邻居节点的特征组成，因此节点特征的维度应该是至少邻居节点特征的维度之和，
+
+        rel_name_lists = ['intra', 'inter', 'global'] # rel_name_lists参数指定了每个图卷积层中考虑的不同关系类型的列表。
+
+        # RelGraphConvLayer() 是一个基于关系图的图卷积层。
+        # 在关系图卷积中，每个节点都表示一个实体，节点之间的边表示实体之间的关系，通过卷积运算在节点之间传递信息。
         self.GCN_layers = nn.ModuleList([RelGraphConvLayer(self.gcn_dim, self.gcn_dim, rel_name_lists,
                                                            num_bases=len(rel_name_lists), activation=self.activation,
                                                            self_loop=True, dropout=self.config.dropout)
                                          for i in range(config.gcn_layers)])
 
+        # 计算Bank大小并定义dropout
         self.bank_size = self.config.gcn_dim * (self.config.gcn_layers + 1)
+
+        # GCN encoder中使用的dropout层，它可以在训练过程中随机将一些神经元的输出值设为0，有助于防止过拟合。
+        # self.config.dropout表示dropout的概率，即每个神经元被随机丢弃的概率。
         self.dropout = nn.Dropout(self.config.dropout)
 
+        # 定义预测层
         self.predict = nn.Sequential(
             nn.Linear(self.bank_size * 5 + self.gcn_dim * 4, self.bank_size * 2),  #
             self.activation,
@@ -54,6 +98,7 @@ class GAIN_GloVe(nn.Module):
             nn.Linear(self.bank_size * 2, config.relation_nums),
         )
 
+        # 定义边缘层
         self.edge_layer = RelEdgeLayer(node_feat=self.gcn_dim, edge_feat=self.gcn_dim,
                                        activation=self.activation, dropout=config.dropout)
 
