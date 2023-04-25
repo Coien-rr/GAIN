@@ -20,7 +20,7 @@ matplotlib.use('Agg')
 
 def train(opt):
     if opt.use_model == 'bert':
-        # datasets
+        # datasets 载入数据集
         train_set = BERTDGLREDataset(opt.train_set, opt.train_set_save, word2id, ner2id, rel2id, dataset_type='train',
                                      opt=opt)
         dev_set = BERTDGLREDataset(opt.dev_set, opt.dev_set_save, word2id, ner2id, rel2id, dataset_type='dev',
@@ -31,7 +31,7 @@ def train(opt):
                                        negativa_alpha=opt.negativa_alpha)
         dev_loader = DGLREDataloader(dev_set, batch_size=opt.test_batch_size, dataset_type='dev')
 
-        model = GAIN_BERT(opt)
+        model = GAIN_BERT(opt) # 初始化模型
 
     elif opt.use_model == 'bilstm':
         # datasets
@@ -49,13 +49,13 @@ def train(opt):
     else:
         assert 1 == 2, 'please choose a model from [bert, bilstm].'
 
-    print(model.parameters)
-    print_params(model)
+    print(model.parameters) # 打印模型相关参数
+    print_params(model) # 打印模型参数总数
 
-    start_epoch = 1
-    pretrain_model = opt.pretrain_model
-    lr = opt.lr
-    model_name = opt.model_name
+    start_epoch = 1 # 确定起始epoch
+    pretrain_model = opt.pretrain_model # 获取预训练模型
+    lr = opt.lr # 确定学习率 learning rate
+    model_name = opt.model_name # 获取模型名称
 
     if pretrain_model != '':
         chkpt = torch.load(pretrain_model, map_location=torch.device('cpu'))
@@ -65,10 +65,11 @@ def train(opt):
         lr = chkpt['lr']
         logging('resume from epoch {} with lr {}'.format(start_epoch, lr))
     else:
-        logging('training from scratch with lr {}'.format(lr))
+        logging('training from scratch with lr {}'.format(lr)) # 使用Bert作为预训练模型
 
-    model = get_cuda(model)
+    model = get_cuda(model) # 使用cuda进行模型加速
 
+    # 使用Bert模型
     if opt.use_model == 'bert':
         bert_param_ids = list(map(id, model.bert.parameters()))
         base_params = filter(lambda p: p.requires_grad and id(p) not in bert_param_ids, model.parameters())
@@ -86,18 +87,22 @@ def train(opt):
     if opt.coslr:
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=(opt.epoch // 4) + 1)
 
+    # 确认checkpoint存在
     checkpoint_dir = opt.checkpoint_dir
     if not os.path.exists(checkpoint_dir):
         os.mkdir(checkpoint_dir)
+
+    # 确认fig_result存在
     fig_result_dir = opt.fig_result_dir
     if not os.path.exists(fig_result_dir):
         os.mkdir(fig_result_dir)
 
+    # 保存最优参数
     best_ign_auc = 0.0
     best_ign_f1 = 0.0
     best_epoch = 0
 
-    model.train()
+    model.train() # 调用模型的训练
 
     global_step = 0
     total_loss = 0
@@ -115,7 +120,7 @@ def train(opt):
     for epoch in range(start_epoch, opt.epoch + 1):
         start_time = time.time()
         for acc in [acc_NA, acc_not_NA, acc_total]:
-            acc.clear()
+            acc.clear() # acc 清除缓存
 
         for ii, d in enumerate(train_loader):
             relation_multi_label = d['relation_multi_label']
@@ -170,10 +175,18 @@ def train(opt):
             global_step += 1
             total_loss += loss.item()
 
-            log_step = opt.log_step
+            log_step = opt.log_step # 获取log_step
             if global_step % log_step == 0:
                 cur_loss = total_loss / log_step
                 elapsed = time.time() - start_time
+                # 打印日志
+                # epoch
+                # step: global_step
+                # ms/b: elapsed * 1000 / log_step
+                # train loss: cur_loss * 1000
+                # NA acc: acc_NA.get()
+                # not NA acc: acc_not_NA.get()
+                # tot acc: acc_total.get()
                 logging(
                     '| epoch {:2d} | step {:4d} |  ms/b {:5.2f} | train loss {:5.3f} | NA acc: {:4.2f} | not NA acc: {:4.2f}  | tot acc: {:4.2f} '.format(
                         epoch, global_step, elapsed * 1000 / log_step, cur_loss * 1000, acc_NA.get(), acc_not_NA.get(),
@@ -181,6 +194,7 @@ def train(opt):
                 total_loss = 0
                 start_time = time.time()
 
+        # 测试epoch
         if epoch % opt.test_epoch == 0:
             logging('-' * 89)
             eval_start_time = time.time()
@@ -190,6 +204,7 @@ def train(opt):
             logging('| epoch {:3d} | time: {:5.2f}s'.format(epoch, time.time() - eval_start_time))
             logging('-' * 89)
 
+            # 保存最优参数
             if ign_f1 > best_ign_f1:
                 best_ign_f1 = ign_f1
                 best_ign_auc = ign_auc
@@ -208,6 +223,7 @@ def train(opt):
                 plt.legend(loc="upper right")
                 plt.savefig(os.path.join(fig_result_dir, model_name))
 
+        # 保存模型参数
         if epoch % opt.save_model_freq == 0:
             path = os.path.join(checkpoint_dir, model_name + '_{}.pt'.format(epoch))
             torch.save({
@@ -223,9 +239,9 @@ def train(opt):
 
 
 if __name__ == '__main__':
-    print('processId:', os.getpid())
-    print('prarent processId:', os.getppid())
-    opt = get_opt()
-    print(json.dumps(opt.__dict__, indent=4))
+    print('processId:', os.getpid()) # 获取当前进程PID
+    print('parent processId:', os.getppid()) # 获取父进程PID
+    opt = get_opt() # 获取config信息
+    print(json.dumps(opt.__dict__, indent=4)) # 打印config信息
     opt.data_word_vec = word2vec
     train(opt)
