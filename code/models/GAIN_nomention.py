@@ -231,36 +231,72 @@ class GAIN_GloVe(nn.Module):
 
 
 class GAIN_BERT(nn.Module):
+    # 定义GAIN_BERT的PyTorch基类，该类继承nn.Module
     def __init__(self, config):
+        # 定义GAIN_BERT的初始化函数
+
         super(GAIN_BERT, self).__init__()
         self.config = config
+
+        # 设置激活函数
+        # 根据config的激活函数选择相应的激活函数
+        ## nn.Tanh(): 双曲正切函数
+        ## nn.ReLU(): 修正线性单元
         self.activation = nn.Tanh() if config.activation == 'tanh' else nn.ReLU()
 
+        # 如果使用实体类型，则设置实体类型嵌入层
         if config.use_entity_type:
             self.entity_type_emb = nn.Embedding(config.entity_type_num, config.entity_type_size,
                                                 padding_idx=config.entity_type_pad)
 
+        # 如果使用实体标识，则设置实体标识嵌入层
         if config.use_entity_id:
             self.entity_id_emb = nn.Embedding(config.max_entity_num + 1, config.entity_id_size,
                                               padding_idx=config.entity_id_pad)
 
+        #导入预训练的bert模型
         self.bert = BertModel.from_pretrained(config.bert_path)
+
+        # 如果使用固定bert模型，则在训练中不对其参数进行修正
         if config.bert_fix:
             for p in self.bert.parameters():
                 p.requires_grad = False
 
+        # gcn_dim定义GCN层的输入和输出维度
         self.gcn_dim = config.gcn_dim
+
         assert self.gcn_dim == config.bert_hid_size + config.entity_id_size + config.entity_type_size
 
+        # rel_name_lists参数指定了每个图卷积层中考虑的不同关系类型的列表。
         rel_name_lists = ['intra', 'inter', 'global']
+
+        # dglnn.GraphConv: 图形卷积层
+        # in_feats: self.gcn_dim
+        # out_feats: self.gcn_dim
+        # norm: 'right' 即作平均处理
+        # weight: True | apple linear layer?
+        # bias: True | adds a learnable bias to the output?
+        # activation: self.activation 激活函数
+
+        # 基于config.gcn_layers配置 GCN 层数
         self.GCN_layers = nn.ModuleList([dglnn.GraphConv(self.gcn_dim, self.gcn_dim, norm='right', weight=True,
                                                          bias=True, activation=self.activation)
                                          for i in range(config.gcn_layers)])
 
+
+        # bank_size 就是GCN层输出的特征维度大小
+        # bank_size 为啥是这么计算的？
+        # self.config.gcn_layers 表示的是 gcn 的层数，
+        # +1 表示的是初始化的embedding维度。
+        # 所以这里是 *(self.config.gcn_layers+1)。
+        # 这个可以在论文中的3.2下的公式(4)得出
         self.bank_size = self.gcn_dim * (self.config.gcn_layers + 1)
 
+        # GCN encoder中使用的dropout层，它可以在训练过程中随机将一些神经元的输出值设为0，有助于防止过拟合。
+        # self.config.dropout表示dropout的概率，即每个神经元被随机丢弃的概率。
         self.dropout = nn.Dropout(self.config.dropout)
 
+        # 定义预测层
         self.predict = nn.Sequential(
             nn.Linear(self.bank_size * 4 + self.gcn_dim * 5, self.bank_size * 2),
             self.activation,
