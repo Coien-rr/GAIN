@@ -106,7 +106,7 @@ class GAIN_GloVe(nn.Module):
         self.attention = Attention(self.bank_size * 2, self.gcn_dim * 4)
 
     def forward(self, **params):
-        '''
+        """
             words: [batch_size, max_length]
             src_lengths: [batchs_size]
             mask: [batch_size, max_length]
@@ -117,38 +117,63 @@ class GAIN_GloVe(nn.Module):
             entity2mention_table: list of [local_entity_num, local_mention_num]
             graphs: list of DGLHeteroGraph
             h_t_pairs: [batch_size, h_t_limit, 2]
-        '''
-        src = self.word_emb(params['words'])
-        mask = params['mask']
-        bsz, slen, _ = src.size()
+        """
 
+        # words: 输入文本的词序列张量
+        # src_lengths: words中每个样本的实际词数
+        # mask: 对words进行padding的mask张量
+        # entity_type: 输入文本中每个词的实体类型的标记张量
+        # entity_id: 每个词所属实体的唯一标识符张量
+        # mention_id: 每个词在文本中出现的唯一标识符的张量
+        # distance: 每个词与所属实体之间的距离的张量
+        # entity2mention_table: 实体与其所包含的提及之间的映射表
+        # graphs: 输入文本中所有实体和提及之间的图
+        # h_t_pairs:
+
+        src = self.word_emb(params['words'])
+        # 通过调用词嵌入层word_emb,将输入文本的词序列对应的词向量序列
+
+        mask = params['mask']
+        # 获得输入的遮盖掩码，以掩盖填充的位置。
+
+        bsz, slen, _ = src.size()
+        # bsz: 批量大小
+        # slen: 序列长度
+        # _: 词向量维度（不使用该变量
+
+        # 如果使用实体类型
         if self.config.use_entity_type:
             src = torch.cat([src, self.entity_type_emb(params['entity_type'])], dim=-1)
+            # 将实体类型的嵌入向量与 src 沿着最后一个维度（dim=-1）拼接在一起，最终得到一个新的张量作为模型的输入。
 
+        # 如果使用实体ID
         if self.config.use_entity_id:
             src = torch.cat([src, self.entity_id_emb(params['entity_id'])], dim=-1)
+            # 将实体ID的嵌入向量与 src 沿着最后一个维度（dim=-1）拼接在一起，最终得到一个新的张量作为模型的输入。
 
         # src: [batch_size, slen, encoder_input_size]
         # src_lengths: [batchs_size]
 
         encoder_outputs, (output_h_t, _) = self.encoder(src, params['src_lengths'])
+        # 使用Encoder将输入的 src 序列编码成一个context向量序列 encoder_outputs，并返回最后一个时刻的hidden状态向量 output_h_t。
         encoder_outputs[mask == 0] = 0
         # encoder_outputs: [batch_size, slen, 2*encoder_hid_size]
         # output_h_t: [batch_size, 2*encoder_hid_size]
 
-        graphs = params['graphs']
+        graphs = params['graphs'] # 从参数中获取图结构
 
-        mention_id = params['mention_id']
+        mention_id = params['mention_id'] # 从参数中获取提及实体ID
         features = None
 
+        # 遍历graphs
         for i in range(len(graphs)):
-            encoder_output = encoder_outputs[i]  # [slen, 2*encoder_hid_size]
-            mention_num = torch.max(mention_id[i])
+            encoder_output = encoder_outputs[i]  # 获取编码器输出，shape: [slen, 2*encoder_hid_size]
+            mention_num = torch.max(mention_id[i]) # 获取当前图中提及实体的数量
             mention_index = get_cuda(
                 (torch.arange(mention_num) + 1).unsqueeze(1).expand(-1, slen))  # [mention_num, slen]
             mentions = mention_id[i].unsqueeze(0).expand(mention_num, -1)  # [mention_num, slen]
             select_metrix = (mention_index == mentions).float()  # [mention_num, slen]
-            # average word -> mention
+            # average word -> mention 将词向量转换为提及实体向量，即将每个提及实体的所有词的词向量进行平均
             word_total_numbers = torch.sum(select_metrix, dim=-1).unsqueeze(-1).expand(-1, slen)  # [mention_num, slen]
             select_metrix = torch.where(word_total_numbers > 0, select_metrix / word_total_numbers, select_metrix)
             x = torch.mm(select_metrix, encoder_output)  # [mention_num, 2*encoder_hid_size]
