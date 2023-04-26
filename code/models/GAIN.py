@@ -304,7 +304,10 @@ class GAIN_GloVe(nn.Module):
 class GAIN_BERT(nn.Module):
     def __init__(self, config):
         super(GAIN_BERT, self).__init__()
+        # 导入config信息，初始化设置模块
         self.config = config
+
+        # 设置激活函数
         if config.activation == 'tanh':
             self.activation = nn.Tanh()
         elif config.activation == 'relu':
@@ -312,29 +315,48 @@ class GAIN_BERT(nn.Module):
         else:
             assert 1 == 2, "you should provide activation function."
 
+        # 配置实体类型嵌入层
         if config.use_entity_type:
             self.entity_type_emb = nn.Embedding(config.entity_type_num, config.entity_type_size,
                                                 padding_idx=config.entity_type_pad)
+        # 配置实体ID嵌入层
         if config.use_entity_id:
             self.entity_id_emb = nn.Embedding(config.max_entity_num + 1, config.entity_id_size,
                                               padding_idx=config.entity_id_pad)
 
+        # 导入预训练模型
         self.bert = BertModel.from_pretrained(config.bert_path)
+
+        # 确定bert模型是否修正
         if config.bert_fix:
             for p in self.bert.parameters():
                 p.requires_grad = False
 
+        # 设置GCN层的输入和输出维度
         self.gcn_dim = config.gcn_dim
         assert self.gcn_dim == config.bert_hid_size + config.entity_id_size + config.entity_type_size
 
         rel_name_lists = ['intra', 'inter', 'global']
+
+        # 配置多层GCN
         self.GCN_layers = nn.ModuleList([RelGraphConvLayer(self.gcn_dim, self.gcn_dim, rel_name_lists,
                                                            num_bases=len(rel_name_lists), activation=self.activation,
                                                            self_loop=True, dropout=self.config.dropout)
                                          for i in range(config.gcn_layers)])
 
+        # bank_size 就是GCN层输出的特征维度大小
+        # bank_size 为啥是这么计算的？
+        # self.config.gcn_layers 表示的是 gcn 的层数，
+        # +1 表示的是初始化的embedding维度。
+        # 所以这里是 *(self.config.gcn_layers+1)。
+        # 这个可以在论文中的3.2下的公式(4)得出
         self.bank_size = self.gcn_dim * (self.config.gcn_layers + 1)
+
+        # GCN encoder中使用的dropout层，它可以在训练过程中随机将一些神经元的输出值设为0，有助于防止过拟合。
+        # self.config.dropout表示dropout的概率，即每个神经元被随机丢弃的概率。
         self.dropout = nn.Dropout(self.config.dropout)
+
+        # 定义预测层
         self.predict = nn.Sequential(
             nn.Linear(self.bank_size * 5 + self.gcn_dim * 4, self.bank_size * 2),
             self.activation,
@@ -342,6 +364,7 @@ class GAIN_BERT(nn.Module):
             nn.Linear(self.bank_size * 2, config.relation_nums),
         )
 
+        # 配置边层
         self.edge_layer = RelEdgeLayer(node_feat=self.gcn_dim, edge_feat=self.gcn_dim,
                                        activation=self.activation, dropout=config.dropout)
 
