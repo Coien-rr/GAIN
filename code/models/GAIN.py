@@ -1,11 +1,11 @@
-import dgl # Deep Graph Library 用于处理图形数据的库
-import dgl.nn.pytorch as dglnn # DGL的 PyTorch 模块，用于构建和训练图神经网络模型
-import numpy as np # numpy 科学计算库
-import torch # PyTorch深度学习框架
-import torch.nn as nn # PyTorch中的神经网络模块，提供预定义的神经网络层和模型
-from transformers import * # Transformers提供预训练的语言模型和各种工具和函数
+import dgl  # Deep Graph Library 用于处理图形数据的库
+import dgl.nn.pytorch as dglnn  # DGL的 PyTorch 模块，用于构建和训练图神经网络模型
+import numpy as np  # numpy 科学计算库
+import torch  # PyTorch深度学习框架
+import torch.nn as nn  # PyTorch中的神经网络模块，提供预定义的神经网络层和模型
+from transformers import *  # Transformers提供预训练的语言模型和各种工具和函数
 
-from utils import get_cuda # 导入了自定义模块utils中的函数get_cuda(), 用于进行GPU加速的辅助函数
+from utils import get_cuda  # 导入了自定义模块utils中的函数get_cuda(), 用于进行GPU加速的辅助函数
 
 
 class GAIN_GloVe(nn.Module):
@@ -19,7 +19,7 @@ class GAIN_GloVe(nn.Module):
         self.config = config
 
         # 配置词向量维度、词汇表大小和编码器输入大小
-        word_emb_size = config.word_emb_size # 词向量：用来表示词语语义的向量，通常是固定维度，即词向量维度
+        word_emb_size = config.word_emb_size  # 词向量：用来表示词语语义的向量，通常是固定维度，即词向量维度
         vocabulary_size = config.vocabulary_size
         encoder_input_size = word_emb_size
 
@@ -27,7 +27,6 @@ class GAIN_GloVe(nn.Module):
         ## nn.Tanh(): 双曲正切函数
         ## nn.ReLU(): 修正线性单元
         self.activation = nn.Tanh() if config.activation == 'tanh' else nn.ReLU()
-
 
         # 定义词嵌入层
         self.word_emb = nn.Embedding(vocabulary_size, word_emb_size, padding_idx=config.word_pad)
@@ -50,7 +49,7 @@ class GAIN_GloVe(nn.Module):
             # 将词嵌入层输出维度 word_emb_size 与实体类型嵌入层输出维度 config.entity_type_size 相加
             # 作为双向LSTM的输入维度encoder_input_size
             # encoder_input_size = config.word_emb_size + config.entity_type_size
-            encoder_input_size += config.entity_type_size # Line24 encoder_input_size = word_emb_size
+            encoder_input_size += config.entity_type_size  # Line24 encoder_input_size = word_emb_size
             # 增加实体类型嵌入层，
             self.entity_type_emb = nn.Embedding(config.entity_type_num, config.entity_type_size,
                                                 padding_idx=config.entity_type_pad)
@@ -59,7 +58,7 @@ class GAIN_GloVe(nn.Module):
         if config.use_entity_id:
             # 如上
             encoder_input_size += config.entity_id_size
-            #增加实体ID嵌入层
+            # 增加实体ID嵌入层
             self.entity_id_emb = nn.Embedding(config.max_entity_num + 1, config.entity_id_size,
                                               padding_idx=config.entity_id_pad)
 
@@ -69,12 +68,12 @@ class GAIN_GloVe(nn.Module):
         ## 由前向LSTM和后向LSTM组成，可以有效地捕捉序列中的时序信息，并生成一个固定维度的向量表示，用于后续的图卷积和关系预测。
 
         # 定义RelGraphConvLayer实例，构成多层的GCN层
-        self.gcn_dim = config.gcn_dim # gcn_dim是GCN层的输入和输出维度
+        self.gcn_dim = config.gcn_dim  # gcn_dim是GCN层的输入和输出维度
         assert self.gcn_dim == 2 * config.lstm_hidden_size, 'gcn dim should be the lstm hidden dim * 2'
         # lstm_hidden_size 是BiLSTM模型中的隐藏层维度。
         # 因为在图卷积网络层中，节点的特征是由它本身的特征以及邻居节点的特征组成，因此节点特征的维度应该是至少邻居节点特征的维度之和，
 
-        rel_name_lists = ['intra', 'inter', 'global'] # rel_name_lists参数指定了每个图卷积层中考虑的不同关系类型的列表。
+        rel_name_lists = ['intra', 'inter', 'global']  # rel_name_lists参数指定了每个图卷积层中考虑的不同关系类型的列表。
 
         # RelGraphConvLayer() 是一个基于关系图的图卷积层。
         # 在关系图卷积中，每个节点都表示一个实体，节点之间的边表示实体之间的关系，通过卷积运算在节点之间传递信息。
@@ -160,15 +159,15 @@ class GAIN_GloVe(nn.Module):
         # encoder_outputs: [batch_size, slen, 2*encoder_hid_size]
         # output_h_t: [batch_size, 2*encoder_hid_size]
 
-        graphs = params['graphs'] # 从参数中获取图结构
+        graphs = params['graphs']  # 从参数中获取图结构
 
-        mention_id = params['mention_id'] # 从参数中获取提及实体ID
+        mention_id = params['mention_id']  # 从参数中获取提及实体ID
         features = None
 
         # 遍历graphs
         for i in range(len(graphs)):
             encoder_output = encoder_outputs[i]  # 获取编码器输出，shape: [slen, 2*encoder_hid_size]
-            mention_num = torch.max(mention_id[i]) # 获取当前图中提及实体的数量
+            mention_num = torch.max(mention_id[i])  # 获取当前图中提及实体的数量
             mention_index = get_cuda(
                 (torch.arange(mention_num) + 1).unsqueeze(1).expand(-1, slen))  # [mention_num, slen]
             mentions = mention_id[i].unsqueeze(0).expand(mention_num, -1)  # [mention_num, slen]
@@ -315,6 +314,10 @@ class GAIN_BERT(nn.Module):
         else:
             assert 1 == 2, "you should provide activation function."
 
+        # nn.Embedding 是 PyTorch 中的一个类，用于将输入的离散化的数据（如单词或字符）映射为高维向量表示。
+        # 这通常用于自然语言处理（NLP）中的单词嵌入技术，其中每个单词都被表示为向量。
+        # nn.Embedding的构造函数的参数：词表大小(config.entity_type_num) + 向量维度(config.entity_type_size) + 。
+
         # 配置实体类型嵌入层
         if config.use_entity_type:
             self.entity_type_emb = nn.Embedding(config.entity_type_num, config.entity_type_size,
@@ -386,42 +389,93 @@ class GAIN_BERT(nn.Module):
         h_t_pairs: [batch_size, h_t_limit, 2]
         ht_pair_distance: [batch_size, h_t_limit]
         '''
+
+        # words: 输入文本的词序列,二维数组的形式？
+        # src_lengths: words中每个样本的实际词数
+        # mask: 对words进行padding的mask张量
+        # entity_type: 输入文本中每个词的实体类型的标记张量
+        # entity_id: 每个词所属实体的唯一标识符张量
+        # mention_id: 每个词在文本中出现的唯一标识符的张量
+        # distance: 每个词与所属实体之间的距离的张量
+        # entity2mention_table: 实体与其所包含的提及之间的映射表
+        # graphs: hMG list
+        # h_t_pairs:
+
+        # 获取词序列
         words = params['words']
+
+        # 获取mask
         mask = params['mask']
+
+        # bsz: 批量大小
+        # slen: 序列长度
         bsz, slen = words.size()
 
+        # 将词序列向量化？
+        # 使用预训练模型Bert对输入的 words 和 mask 进行编码, 得到编码输出 encoder_outputs 和 句子分类向量 sentence_cls
         encoder_outputs, sentence_cls = self.bert(input_ids=words, attention_mask=mask)
         # encoder_outputs[mask == 0] = 0
 
+        # 根据 config 向 encoder_outputs 添加实体类型和实体ID信息 3.1 (2)
         if self.config.use_entity_type:
             encoder_outputs = torch.cat([encoder_outputs, self.entity_type_emb(params['entity_type'])], dim=-1)
 
         if self.config.use_entity_id:
             encoder_outputs = torch.cat([encoder_outputs, self.entity_id_emb(params['entity_id'])], dim=-1)
 
+        # TODO:
         sentence_cls = torch.cat(
             (sentence_cls, get_cuda(torch.zeros((bsz, self.config.entity_type_size + self.config.entity_id_size)))),
             dim=-1)
         # encoder_outputs: [batch_size, slen, bert_hid+type_size+id_size]
         # sentence_cls: [batch_size, bert_hid+type_size+id_size]
 
+        # 获取hMG list
+        # batch_size有多大就有多少个graphs(doc)
         graphs = params['graphs']
 
+        # 获取提及实体ID数据
         mention_id = params['mention_id']
+
+        # 将输入的句子中每个实体的信息从句子中提取出来，得到提及实体的特征向量（features）。
         features = None
 
+        # 遍历这组batch中的graphs(doc)
         for i in range(len(graphs)):
-            encoder_output = encoder_outputs[i]  # [slen, bert_hid]
+            # 获取第i篇 doc 中每个 token 的 embedding 表示
+            encoder_output = encoder_outputs[i]  # [slen, bert_hid] ？ [slen, bert_hid+type_size+id_size]
+
+            # 获取mention总数，即第i个数组中最大的 mention 标识？
             mention_num = torch.max(mention_id[i])
+
+            # 生成mention比较矩阵,形如
+            # [1, 2, 3, 4, 5]
+            # [[1], [2], [3], [4], [5]]
+            # 第1个mention在第1，2，3，4，5个位置出现过(列方向
+            # 用作和mentions比较得出select_metrix[mention_num][slen]
             mention_index = get_cuda(
                 (torch.arange(mention_num) + 1).unsqueeze(1).expand(-1, slen))  # [mention_num, slen]
+
+            # 获取第i个doc的mention出现矩阵
             mentions = mention_id[i].unsqueeze(0).expand(mention_num, -1)  # [mention_num, slen]
+
+            # 比较得到选择矩阵，相同元素为1，不同为0
+            # select_metrix[i][j] =1代表的就是第i个mention在位置j出现过，否则没有出现。select_metrix.size(1) 就是doc 的长度
             select_metrix = (mention_index == mentions).float()  # [mention_num, slen]
+
             # average word -> mention
+            # torch.sum(select_metrix, dim=-1) 对select_metrix做行求和，得到一个行向量 [1, mention_num]
+            # .unsqueeze(-1) 将行向量变换成列向量 [mention_num, 1]
+            # .expand(-1, slen) 将列向量复制slen次 -> 作归一化用
             word_total_numbers = torch.sum(select_metrix, dim=-1).unsqueeze(-1).expand(-1, slen)  # [mention_num, slen]
+
+            # 对选择矩阵进行归一化，即将各个mention标记为出现的概率
             select_metrix = torch.where(word_total_numbers > 0, select_metrix / word_total_numbers, select_metrix)
 
-            x = torch.mm(select_metrix, encoder_output)  # [mention_num, bert_hid]
+            # 根据select_metrix 和 encoder_output 做乘法，得到mention的表示
+            x = torch.mm(select_metrix, encoder_output)  # 矩阵乘法->[mention_num, bert_hid+type_size+id_size]
+
+            # cat -> [mention_num+1, bert_hid+type_size+id_size]
             x = torch.cat((sentence_cls[i].unsqueeze(0), x), dim=0)
 
             if features is None:
@@ -429,9 +483,11 @@ class GAIN_BERT(nn.Module):
             else:
                 features = torch.cat((features, x), dim=0)
 
+        # graph_big ：<class 'dgl.heterograph.DGLHeteroGraph'> 将一批graph(graphs)一起处理
         graph_big = dgl.batch_hetero(graphs)
         output_features = [features]
 
+        # apply GCN
         for GCN_layer in self.GCN_layers:
             features = GCN_layer(graph_big, {"node": features})["node"]  # [total_mention_nums, gcn_dim]
             output_features.append(features)
